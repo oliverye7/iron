@@ -1,28 +1,38 @@
 // shared state management
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use std::sync::{Arc, Mutex};
+use uuid::Uuid;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ContextMessage {
-    pub message_type: MesageType,
+    pub message_type: MessageType,
     pub content: String,
-    pub timestamp: Option<chrono::DateTime<chrono::Utc>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timestamp: Option<DateTime<Utc>>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub enum MessageType {
     UserPrompt,
     AssistantResponse,
-    CliCommand,
+    ReadOnlyCliCommand,
+    WriteExecuteCliCommand,
     CliOutput,
+    UserCancelCmd,
 }
 
 // main struct which manages all app state
+#[derive(Debug)]
 pub struct ChatState {
-    pub chat_id: UUIDv4,
+    pub chat_id: Uuid,
     pub chat_context: Mutex<Vec<ContextMessage>>,
 }
 
+pub type SharedChatState = Arc<ChatState>;
+
 impl ChatState {
-    pub fn new(chat_id: UUIDv4) -> Self {
+    pub fn new(chat_id: Uuid) -> Self {
         Self {
             chat_id,
             chat_context: Mutex::new(Vec::new()),
@@ -31,15 +41,15 @@ impl ChatState {
 
     pub fn add_message_to_state(
         &self,
-        message_type: MesageType,
+        message_type: MessageType,
         content: String,
     ) -> Result<(), String> {
         // or should it be .map_err instead of expect? how do you error handle correctly in rust?
-        let mut context = prev_context.context.lock().expect("Failed to acquire lock");
+        let mut context = self.chat_context.lock().expect("Failed to acquire lock");
         context.push(ContextMessage {
             message_type,
             content,
-            timestamp: chrono::Utc::now(),
+            timestamp: Some(chrono::Utc::now()),
         });
         Ok(())
     }
@@ -51,12 +61,15 @@ impl ChatState {
             .map(|msg| {
                 format!(
                     "[{}] {}: {}",
-                    msg.timestamp,
+                    msg.timestamp
+                        .map_or("No timestamp".to_string(), |ts| ts.to_string()),
                     match msg.message_type {
                         MessageType::UserPrompt => "User",
                         MessageType::AssistantResponse => "Assistant",
-                        MessageType::CliCommand => "Command",
+                        MessageType::ReadOnlyCliCommand => "ReadOnlyCliCommand",
+                        MessageType::WriteExecuteCliCommand => "WriteExecuteCliCommand",
                         MessageType::CliOutput => "Output",
+                        MessageType::UserCancelCmd => "Cancel",
                     },
                     msg.content
                 )

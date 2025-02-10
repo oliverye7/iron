@@ -1,30 +1,20 @@
 // cli command handlers
 use tokio::process::Command;
 
-pub async handle_cli_command(
+use crate::state::app_state::{ChatState, MessageType};
+
+pub async fn handle_cli_command(
     command: String,
-    state: &AppState,
-) -> Result<String, Box<dyn std::error::Error>> {
+    state: &ChatState,
+) -> Result<String, Box<dyn std::error::Error + 'static>> {
+    // TODO: have this stream instead of running an await on the caller
     state.add_message_to_state(MessageType::CliCommand, command.clone())?;
 
-    let output = Command::new("sh")
-                    .arg("-c")
-                    .arg(&cmd.command)
-                    .output()
-                    .await?;
-    
-    
-    
-}
-async fn execute_cli_command(command: String) -> String {
-    // TODO: handle errors
-    // TODO: prevent malicous commands somehow
-    let output = Command::new("sh")
-                    .arg("-c")
-                    .arg(&cmd.command)
-                    .output()
-                    .await
-                    .expect("failed to execute process");
+    let output = Command::new("sh").arg("-c").arg(&command).output().await?;
 
-    return &output.stdout;
+    let output_str = String::from_utf8(output.stdout)?;
+
+    state.add_message_to_state(MessageType::CliOutput, output_str.clone())?;
+
+    Ok(output_str)
 }
