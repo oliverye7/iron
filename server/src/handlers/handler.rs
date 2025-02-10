@@ -6,7 +6,7 @@ use serde::Serialize;
 
 use crate::handlers::chat::handle_openai_call;
 use crate::handlers::cli::handle_cli_command;
-use crate::state::app_state::{ChatState, ContextMessage};
+use crate::state::app_state::{ChatState, CliCommandType, ContextMessage, MessageType};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AssistantResponse {
@@ -20,26 +20,18 @@ pub struct CliResponse {
     status: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CliCommand {
     command_type: CliCommandType,
-    commad: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
-pub enum CliCommandType {
-    ReadOnly,
-    WriteExecute,
+    command: String,
 }
 
 pub async fn handle_chat_action(typed_msg: ContextMessage, chat_state: Arc<ChatState>) -> String {
-    "hi".to_string()
+    let llm_response = openai_message(typed_msg, state);
+    return "Ok".to_string();
 }
 
-async fn openai_message(
-    new_message: web::Json<ContextMessage>,
-    state: web::Data<ChatState>,
-) -> impl Responder {
+async fn openai_message(new_message: ContextMessage, state: Arc<ChatState>) -> impl Responder {
     match handle_openai_call(&new_message, &state).await {
         Ok(output) => HttpResponse::Ok().json(AssistantResponse {
             output,
@@ -52,9 +44,14 @@ async fn openai_message(
     }
 }
 
-#[post("/cli-command")]
-async fn cli_command(command: web::Json<String>, state: web::Data<ChatState>) -> impl Responder {
-    match handle_cli_command(command.clone(), &state).await {
+async fn cli_command(command: web::Json<CliCommand>, state: Arc<ChatState>) -> impl Responder {
+    match handle_cli_command(
+        command.command.clone(),
+        command.command_type.clone(),
+        &state,
+    )
+    .await
+    {
         Ok(output) => HttpResponse::Ok().json(CliResponse {
             output,
             status: "success".to_string(),

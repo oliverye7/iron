@@ -1,6 +1,7 @@
 // shared state management
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::convert::From;
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
@@ -20,6 +21,22 @@ pub enum MessageType {
     WriteExecuteCliCommand,
     CliOutput,
     UserCancelCmd,
+}
+
+// let CliCommandType be a strict subset of MessageTYpe
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Copy)]
+pub enum CliCommandType {
+    ReadOnlyCliCommand,
+    WriteExecuteCliCommand,
+}
+
+impl From<CliCommandType> for MessageType {
+    fn from(value: CliCommandType) -> Self {
+        match value {
+            CliCommandType::ReadOnlyCliCommand => MessageType::ReadOnlyCliCommand,
+            CliCommandType::WriteExecuteCliCommand => MessageType::WriteExecuteCliCommand,
+        }
+    }
 }
 
 // main struct which manages all app state
