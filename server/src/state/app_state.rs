@@ -13,6 +13,21 @@ pub struct ContextMessage {
     pub timestamp: Option<DateTime<Utc>>,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct UserChatPreferences {
+    pub depth: u16,
+    pub autorun: bool,
+}
+
+impl Default for UserChatPreferences {
+    fn default() -> Self {
+        Self {
+            depth: 5,      // Default depth
+            autorun: true, // Default autorun
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub enum MessageType {
     UserPrompt,
@@ -21,6 +36,7 @@ pub enum MessageType {
     WriteExecuteCliCommand,
     CliOutput,
     UserCancelCmd,
+    UserAckCmd,
 }
 
 // let CliCommandType be a strict subset of MessageTYpe
@@ -44,6 +60,7 @@ impl From<CliCommandType> for MessageType {
 pub struct ChatState {
     pub chat_id: Uuid,
     pub chat_context: Mutex<Vec<ContextMessage>>,
+    pub user_prefereces: Mutex<UserChatPreferences>,
 }
 
 pub type SharedChatState = Arc<ChatState>;
@@ -87,6 +104,7 @@ impl ChatState {
                         MessageType::WriteExecuteCliCommand => "WriteExecuteCliCommand",
                         MessageType::CliOutput => "Output",
                         MessageType::UserCancelCmd => "Cancel",
+                        MessageType::UserAckCmd => "Ack",
                     },
                     msg.content
                 )

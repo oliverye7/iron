@@ -2,9 +2,9 @@ use std::sync::{Arc, Mutex};
 
 use uuid::Uuid;
 
-use crate::http_server::start_http_server;
-use crate::state::app_state::{ChatState, SharedChatState};
-use crate::websocket_server::start_websocket_server;
+use server::http_server::start_http_server;
+use server::state::app_state::{ChatState, SharedChatState};
+use server::websocket_server::start_websocket_server;
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {

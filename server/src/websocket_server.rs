@@ -128,9 +128,10 @@ async fn handle_cli_fe_pair(
                                 // TODO: implement kill all children threads of the current thread which are executing chat actions
                                 break;
                             }
+
                             let chat_state = Arc::clone(&chat_state);
                             // we should call the cli command handler here...
-                            tokio::spawn(handle_chat_action(typed_msg, chat_state));
+                            tokio::spawn(handle_chat_action(&typed_msg, chat_state));
 
                         }
                     }
