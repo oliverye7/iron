@@ -18,11 +18,10 @@ Cargo.lock
 /dist
 
 # React/Frontend
-**/.env*
-**/.env.local
-**/.env.development.local
-**/.env.test.local
-**/.env.production.local
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
 
 # Logs
 npm-debug.log*
@@ -37,10 +36,13 @@ logs
 *.swp
 *.swo
 
-# macOS specific files
+# macOS specific files (since you're on Darwin/macOS)
 .DS_Store
 .AppleDouble
 .LSOverride
 
 # Debug files
 *.pdb
+
+# Environment files
+.env
