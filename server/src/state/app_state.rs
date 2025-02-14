@@ -16,14 +16,16 @@ pub struct ContextMessage {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct UserChatPreferences {
     pub depth: u16,
-    pub autorun: bool,
+    pub autorun_readonly: bool,
+    pub autorun_all: bool,
 }
 
 impl Default for UserChatPreferences {
     fn default() -> Self {
         Self {
-            depth: 5,      // Default depth
-            autorun: true, // Default autorun
+            depth: 5,               // Default depth
+            autorun_readonly: true, // Default readonly autorun
+            autorun_all: false,     // Default rwx autorun
         }
     }
 }
@@ -39,7 +41,7 @@ pub enum MessageType {
     UserAckCmd,
 }
 
-// let CliCommandType be a strict subset of MessageTYpe
+// let CliCommandType be a strict subset of MessageType
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Copy)]
 pub enum CliCommandType {
     ReadOnlyCliCommand,
@@ -60,7 +62,7 @@ impl From<CliCommandType> for MessageType {
 pub struct ChatState {
     pub chat_id: Uuid,
     pub chat_context: Mutex<Vec<ContextMessage>>,
-    pub user_prefereces: Mutex<UserChatPreferences>,
+    pub user_preferences: Mutex<UserChatPreferences>,
 }
 
 pub type SharedChatState = Arc<ChatState>;
@@ -70,6 +72,7 @@ impl ChatState {
         Self {
             chat_id,
             chat_context: Mutex::new(Vec::new()),
+            user_preferences: Mutex::new(UserChatPreferences::default()),
         }
     }
 

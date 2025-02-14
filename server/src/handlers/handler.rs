@@ -1,27 +1,38 @@
-use std::fmt::Result;
+use futures_util::stream::SplitSink;
+use futures_util::{SinkExt, StreamExt};
+use std::result::Result;
 use std::sync::Arc;
+use tokio::sync::Mutex;
+use tokio_tungstenite::tungstenite::Message;
 
-use actix_web::{get, post, web, HttpResponse, Responder};
+use tokio::net::TcpStream;
+
 use serde::Deserialize;
 use serde::Serialize;
+use tokio_tungstenite::WebSocketStream;
 
 use crate::db::db::dummy_db_function;
 use crate::handlers::chat::handle_openai_call;
 use crate::handlers::cli::handle_cli_command;
 use crate::state::app_state::{ChatState, CliCommandType, ContextMessage, MessageType};
 
-use super::cli;
-
+type BoxError = Box<dyn std::error::Error + std::marker::Send + Sync + 'static>;
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AssistantResponse {
     output: String,
-    status: String,
+    status: ResponseStatus,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CliResponse {
     output: String,
-    status: String,
+    status: ResponseStatus,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ResponseStatus {
+    Success,
+    Failure,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -30,7 +41,18 @@ pub struct CliCommand {
     command: String,
 }
 
-pub async fn handle_chat_action(typed_msg: &ContextMessage, chat_state: Arc<ChatState>) -> Result {
+#[derive(Debug)]
+pub enum ChatActionOutcome {
+    Continue,
+    Stop,
+}
+
+pub async fn handle_chat_action(
+    typed_msg: ContextMessage,
+    chat_state: Arc<ChatState>,
+    fe_write_stream: Arc<Mutex<SplitSink<WebSocketStream<TcpStream>, Message>>>,
+    cli_write_stream: Arc<Mutex<SplitSink<WebSocketStream<TcpStream>, Message>>>,
+) -> Result<ChatActionOutcome, BoxError> {
     // does it make sense to create a chat_action struct?
     // if so:
     // chat actions consist of the below (the field names can be improved):
@@ -43,41 +65,64 @@ pub async fn handle_chat_action(typed_msg: &ContextMessage, chat_state: Arc<Chat
     // this function can either be triggered by a user's request for an action, or an LLM's continuation
     // TODO: i think the cloning here is unnecessary, right? the function call can just access the memory instead of owning it
     let llm_response = openai_message(typed_msg.clone(), chat_state.clone()).await;
+    if llm_response.status != ResponseStatus::Success {
+        // panik
+        return Err("err".into());
+    }
+    // send response to fe stream
+    let mut fe_ws = fe_write_stream.lock().await; // Lock the write stream before using it
+    fe_ws.send(llm_response.output.into()).await?;
+    drop(fe_ws);
     // TODO: send the llm response back to the websocket server's write stream to the FE.
+
     // update the db by calling dummy_db_function for now; or should the functions the handler hands off to take care of the db updates?
     dummy_db_function();
+
     // decide if there needs to be any CLI action here
     let command = extract_command_from_frontend_message(typed_msg.content.clone());
     if let Some(command) = command {
         let cli_response = cli_command(command, chat_state.clone()).await;
-        if cli_response.status == "success" {
-            let cli_message = ContextMessage {
-                message_type: MessageType::CliOutput,
-                content: cli_response.output,
-                timestamp: Some(chrono::Utc::now()),
-            };
-            // TODO: the cli response should automatically be streamed, since the CLI has a websocket connection
-            // open with the websocket server.
-            let llm_response = openai_message(cli_message, chat_state).await;
-            // TODO: send the llm response back to the websocket server's write stream to the FE.
+        match cli_response.status {
+            ResponseStatus::Success => {
+                let cli_message = ContextMessage {
+                    message_type: MessageType::CliOutput,
+                    content: cli_response.output,
+                    timestamp: Some(chrono::Utc::now()),
+                };
+                // cli response should automatically be streamed, since the CLI has a websocket connection open with the websocket server.
+                let llm_response = openai_message(cli_message, chat_state).await;
+
+                // send response to fe stream
+                let mut fe_ws = fe_write_stream.lock().await; // Lock the write stream before using it
+                fe_ws.send(llm_response.output.into()).await?;
+                drop(fe_ws);
+            }
+            ResponseStatus::Failure => {
+                // do nothing for now
+            }
         }
-        return Ok(());
+        // TODO: need a way to determine whether a chat outcome should be continue or stop.
+        return Ok(ChatActionOutcome::Continue);
     } else {
         // return, the chat action has finished
-        return Ok(());
+        // this logic is wrong for now
+        return Ok(ChatActionOutcome::Stop);
     }
 }
 
-async fn openai_message(new_message: ContextMessage, state: Arc<ChatState>) -> AssistantResponse {
+pub async fn openai_message(
+    new_message: ContextMessage,
+    state: Arc<ChatState>,
+) -> AssistantResponse {
     match handle_openai_call(&new_message, &state).await {
         Ok(output) => AssistantResponse {
             output,
-            status: "success".to_string(),
+            status: ResponseStatus::Success,
         },
         Err(e) => AssistantResponse {
             output: e.to_string(),
             // TODO: make verbose?
-            status: "error".to_string(),
+            status: ResponseStatus::Failure,
         },
     }
 }
@@ -92,12 +137,11 @@ async fn cli_command(command: CliCommand, state: Arc<ChatState>) -> CliResponse 
     {
         Ok(output) => CliResponse {
             output,
-            status: "success".to_string(),
+            status: ResponseStatus::Success,
         },
         Err(e) => CliResponse {
             output: e.to_string(),
-            // TODO: make verbose?
-            status: "error".to_string(),
+            status: ResponseStatus::Failure,
         },
     }
 }
